@@ -1,0 +1,11 @@
+# Local settings and user data
+Settings/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS-specific generated files
+Thumbs.db
+.DS_Store

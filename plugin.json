@@ -1,0 +1,14 @@
+{
+  "ID": "A7B4F9C2-88E1-43F3-912A-BCC834567890",
+  "ActionKeyword": "rbx",
+  "Name": "RobloxFlow",
+  "Description": "Quickly manage Roblox actions, sessions, and utilities from Flow Launcher.",
+  "Author": "Skal",
+  "Version": "1.0.0",
+  "Language": "python",
+  "DisplayToUser": true,
+  "IcoPath": "icons/icon.png",
+  "ExecuteFileName": "main.py",
+  "Website": "https://github.com/Skal64/RobloxFlow",
+  "Source": "https://github.com/Skal64/RobloxFlow"
+}
