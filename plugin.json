@@ -4,7 +4,7 @@
   "Name": "RobloxFlow",
   "Description": "Quickly manage Roblox actions, sessions, and utilities from Flow Launcher.",
   "Author": "Skal",
-  "Version": "1.0.0",
+  "Version": "1.0.1",
   "Language": "python",
   "DisplayToUser": true,
   "IcoPath": "icons/icon.png",
