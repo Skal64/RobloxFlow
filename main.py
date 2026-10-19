@@ -63,6 +63,19 @@ def add_favorite_game(place_id, name):
         pass
     return False
 
+def remove_favorite_game(place_id):
+    try:
+        favs = load_json(FAV_FILE)
+        if not isinstance(favs, list):
+            favs = []
+        
+        new_favs = [g for g in favs if str(g.get("id")) != str(place_id)]
+        save_json(FAV_FILE, new_favs)
+        return True
+    except Exception:
+        pass
+    return False
+
 def open_url(url):
     try:
         os.system(f"start {url}")
@@ -79,12 +92,17 @@ def search_games(query_text):
             },
             {
                 "Title": "-f (or favorites)",
-                "SubTitle": "View and launch your pinned favorite games",
+                "SubTitle": "View, launch, or unpin your saved favorite games",
                 "IcoPath": "icons/icon.png"
             },
             {
                 "Title": "pin <game name>",
                 "SubTitle": "Search and pin a game to your permanent favorites list",
+                "IcoPath": "icons/icon.png"
+            },
+            {
+                "Title": "unpin <game name>",
+                "SubTitle": "Search and remove a game from your favorites list",
                 "IcoPath": "icons/icon.png"
             },
             {
@@ -95,6 +113,11 @@ def search_games(query_text):
             {
                 "Title": "user <username>",
                 "SubTitle": "Look up a Roblox user profile and jump straight to their page",
+                "IcoPath": "icons/icon.png"
+            },
+            {
+                "Title": "group <group name>",
+                "SubTitle": "Search for Roblox groups and open their pages",
                 "IcoPath": "icons/icon.png"
             },
             {
@@ -132,7 +155,7 @@ def search_games(query_text):
             gname = item.get("name", f"Place ID: {gid}")
             results.append({
                 "Title": f"⭐ {gname}",
-                "SubTitle": f"Launch Favorite | Place ID: {gid}",
+                "SubTitle": f"Launch Favorite | Place ID: {gid} (Type 'unpin {gname}' to remove)",
                 "IcoPath": "icons/icon.png",
                 "JsonRPCAction": {
                     "method": "launch_game",
@@ -167,6 +190,60 @@ def search_games(query_text):
                 }
             })
         return results
+
+    # Handle Group Search Command
+    if clean_query.lower().startswith("group "):
+        group_name = clean_query[6:].strip()
+        if not group_name:
+            return [{
+                "Title": "Invalid Group Name",
+                "SubTitle": "Please specify a group name (e.g. group Redcliff)",
+                "IcoPath": "icons/icon.png"
+            }]
+        
+        try:
+            encoded_group = urllib.parse.quote(group_name)
+            group_url = f"https://groups.roblox.com/v1/groups/search?keyword={encoded_group}&prioritizeExactMatch=true&limit=10"
+            req = urllib.request.Request(group_url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+            
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                group_list = data.get("data", [])
+                if not group_list:
+                    return [{
+                        "Title": f"Group '{group_name}' Not Found",
+                        "SubTitle": "Check spelling or try a different search term",
+                        "IcoPath": "icons/icon.png"
+                    }]
+                
+                results = []
+                for g in group_list:
+                    g_id = g.get("id")
+                    g_title = g.get("name")
+                    g_members = g.get("memberCount", 0)
+                    g_desc = g.get("description", "").replace("\n", " ")
+                    sub_desc = f"Members: {g_members:,} | ID: {g_id}"
+                    if g_desc:
+                        sub_desc = f"{sub_desc} | {g_desc[:50]}..." if len(g_desc) > 50 else f"{sub_desc} | {g_desc}"
+
+                    target_url = f"https://www.roblox.com/groups/{g_id}"
+                    results.append({
+                        "Title": f"👥 {g_title}",
+                        "SubTitle": sub_desc,
+                        "IcoPath": "icons/icon.png",
+                        "JsonRPCAction": {
+                            "method": "open_url",
+                            "parameters": [target_url],
+                            "dontHideAfterAction": False
+                        }
+                    })
+                return results
+        except Exception as e:
+            return [{
+                "Title": "Error Looking Up Group",
+                "SubTitle": str(e),
+                "IcoPath": "icons/icon.png"
+            }]
 
     # Handle Set Cookie Command
     if clean_query.lower().startswith("setcookie "):
@@ -259,18 +336,22 @@ def search_games(query_text):
                 "IcoPath": "icons/icon.png"
             }]
 
-    # Determine mode: Play vs Pin
+    # Determine mode: Play vs Pin vs Unpin
     is_pin_mode = False
+    is_unpin_mode = False
     if clean_query.lower().startswith("pin "):
         is_pin_mode = True
         clean_query = clean_query[4:].strip()
+    elif clean_query.lower().startswith("unpin "):
+        is_unpin_mode = True
+        clean_query = clean_query[6:].strip()
     elif clean_query.lower().startswith("play "):
         clean_query = clean_query[5:].strip()
     else:
         return [
             {
                 "Title": "Invalid Command Format",
-                "SubTitle": "Use 'play [game]', 'pin [game]', '-f', 'recent', 'user [name]', or clear input for menu",
+                "SubTitle": "Use 'play [game]', 'pin [game]', 'unpin [game]', '-f', 'recent', 'user [name]', 'group [name]', or clear input for menu",
                 "IcoPath": "icons/icon.png"
             },
             {
@@ -290,9 +371,19 @@ def search_games(query_text):
 
     # 1. Direct Place ID Support
     if clean_query.isdigit():
-        action_name = "pin_game" if is_pin_mode else "launch_game"
-        title_prefix = f"Pin Place ID: {clean_query}" if is_pin_mode else f"Launch Place ID: {clean_query}"
-        sub_text = "Press Enter to save to favorites" if is_pin_mode else "Press Enter to launch this specific place"
+        if is_unpin_mode:
+            action_name = "unpin_game"
+            title_prefix = f"Unpin Place ID: {clean_query}"
+            sub_text = "Press Enter to remove from favorites"
+        elif is_pin_mode:
+            action_name = "pin_game"
+            title_prefix = f"Pin Place ID: {clean_query}"
+            sub_text = "Press Enter to save to favorites"
+        else:
+            action_name = "launch_game"
+            title_prefix = f"Launch Place ID: {clean_query}"
+            sub_text = "Press Enter to launch this specific place"
+
         return [{
             "Title": title_prefix,
             "SubTitle": sub_text,
@@ -319,8 +410,16 @@ def search_games(query_text):
                 gname = item.get("name") or item.get("query")
                 if gid and gname and gid not in seen_ids:
                     seen_ids.add(gid)
-                    action_name = "pin_game" if is_pin_mode else "launch_game"
-                    title_text = f"⭐ Pin: {gname}" if is_pin_mode else gname
+                    if is_unpin_mode:
+                        action_name = "unpin_game"
+                        title_text = f"🗑️ Unpin: {gname}"
+                    elif is_pin_mode:
+                        action_name = "pin_game"
+                        title_text = f"⭐ Pin: {gname}"
+                    else:
+                        action_name = "launch_game"
+                        title_text = gname
+
                     results.append({
                         "Title": title_text,
                         "SubTitle": f"Place ID: {gid}",
@@ -350,8 +449,17 @@ def search_games(query_text):
                             seen_ids.add(gid)
                             player_count = content.get("playerCount") or content.get("playing")
                             sub = f"Active Players: {player_count:,} | ID: {gid}" if isinstance(player_count, int) else f"ID: {gid}"
-                            action_name = "pin_game" if is_pin_mode else "launch_game"
-                            title_text = f"⭐ Pin: {name}" if is_pin_mode else name
+                            
+                            if is_unpin_mode:
+                                action_name = "unpin_game"
+                                title_text = f"🗑️ Unpin: {name}"
+                            elif is_pin_mode:
+                                action_name = "pin_game"
+                                title_text = f"⭐ Pin: {name}"
+                            else:
+                                action_name = "launch_game"
+                                title_text = name
+
                             results.append({
                                 "Title": title_text,
                                 "SubTitle": sub,
@@ -385,8 +493,16 @@ def search_games(query_text):
                 for players, place_id, name in matches:
                     if place_id not in seen_ids:
                         seen_ids.add(place_id)
-                        action_name = "pin_game" if is_pin_mode else "launch_game"
-                        title_text = f"⭐ Pin: {name}" if is_pin_mode else name
+                        if is_unpin_mode:
+                            action_name = "unpin_game"
+                            title_text = f"🗑️ Unpin: {name}"
+                        elif is_pin_mode:
+                            action_name = "pin_game"
+                            title_text = f"⭐ Pin: {name}"
+                        else:
+                            action_name = "launch_game"
+                            title_text = name
+
                         results.append({
                             "Title": title_text,
                             "SubTitle": f"Active Players: {players:,} | Place ID: {place_id}",
@@ -403,7 +519,7 @@ def search_games(query_text):
             pass
 
     # 5. Web Search Fallback
-    if not results and not is_pin_mode:
+    if not results and not is_pin_mode and not is_unpin_mode:
         results.append({
             "Title": f"Search '{clean_query}' on Roblox.com",
             "SubTitle": "Open official website discovery page",
@@ -468,6 +584,31 @@ def pin_game(place_id, game_name="Roblox Game"):
     except Exception:
         pass
 
+def unpin_game(place_id, game_name="Roblox Game"):
+    try:
+        resolved_id = place_id
+        if len(place_id) > 0:
+            try:
+                url = f"https://apis.roblox.com/universes/v1/places/{place_id}/universe"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=2) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    if "universeId" in data:
+                        uni_id = data["universeId"]
+                        uni_url = f"https://games.roblox.com/v1/games?universeIds={uni_id}"
+                        with urllib.request.urlopen(urllib.request.Request(uni_url, headers={"User-Agent": "Mozilla/5.0"}), timeout=2) as u_resp:
+                            u_data = json.loads(u_resp.read().decode('utf-8'))
+                            if "data" in u_data and len(u_data["data"]) > 0:
+                                root_id = u_data["data"][0].get("rootPlaceId")
+                                if root_id:
+                                    resolved_id = str(root_id)
+            except Exception:
+                pass
+
+        remove_favorite_game(resolved_id)
+    except Exception:
+        pass
+
 def open_web_search(query):
     try:
         encoded = urllib.parse.quote(query)
@@ -503,6 +644,15 @@ def main():
                         gid = params[0]
                         gname = params[1] if len(params) > 1 else "Roblox Game"
                         pin_game(gid, gname)
+                    print(json.dumps({"result": []}))
+                    sys.stdout.flush()
+                    return
+
+                if method == "unpin_game":
+                    if params:
+                        gid = params[0]
+                        gname = params[1] if len(params) > 1 else "Roblox Game"
+                        unpin_game(gid, gname)
                     print(json.dumps({"result": []}))
                     sys.stdout.flush()
                     return
@@ -552,6 +702,13 @@ def main():
                     gid = params[0]
                     gname = params[1] if len(params) > 1 else "Roblox Game"
                     pin_game(gid, gname)
+                    print(json.dumps({"result": []}))
+                    sys.stdout.flush()
+                    return
+                if method == "unpin_game" and params:
+                    gid = params[0]
+                    gname = params[1] if len(params) > 1 else "Roblox Game"
+                    unpin_game(gid, gname)
                     print(json.dumps({"result": []}))
                     sys.stdout.flush()
                     return
